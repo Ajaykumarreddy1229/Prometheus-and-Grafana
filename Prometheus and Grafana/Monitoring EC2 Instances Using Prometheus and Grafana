@@ -1,0 +1,904 @@
+PROMETHEUS AND GRAFANA – MAIN AND WORKER NODES MONITORING
+========================================================
+
+PROJECT: Monitoring EC2 Instances Using Prometheus and Grafana
+
+1. PROJECT OVERVIEW
+-------------------
+
+In this project, we are implementing centralized monitoring for multiple AWS EC2 instances using Prometheus and Grafana.
+
+We will launch three EC2 instances running Amazon Linux 2023.
+
+Monitoring Server:
+- Prometheus
+- Grafana
+- Node Exporter
+- Loki
+- Promtail
+
+Worker Node 1:
+- Node Exporter
+
+Worker Node 2:
+- Node Exporter
+
+Prometheus collects system metrics from all the instances.
+Grafana visualizes the metrics through dashboards.
+Loki aggregates and stores logs.
+Promtail collects logs and forwards them to Loki.
+
+
+2. MONITORING TOOLS
+-------------------
+
+Grafana:
+Used for visualizing metrics and logs through dashboards.
+
+Prometheus:
+Used for collecting and storing time-series metrics.
+
+Node Exporter:
+An agent that collects Linux system metrics such as CPU, memory, disk and network utilization.
+
+Loki:
+Used for aggregating and storing logs.
+
+Promtail:
+An agent that collects logs and forwards them to Loki.
+
+Logstash:
+Used for processing and forwarding logs in logging pipelines.
+
+
+3. EC2 INSTANCE CONFIGURATION
+------------------------------
+
+Launch three EC2 instances using Amazon Linux 2023.
+
+Monitoring Server:
+- Install Prometheus.
+- Install Grafana.
+- Install Node Exporter.
+- Install Loki and Promtail.
+- Use a larger instance type depending on workload.
+
+Worker Node 1:
+- Instance type: t3.micro
+- Install Node Exporter.
+
+Worker Node 2:
+- Instance type: t3.micro
+- Install Node Exporter.
+
+
+4. IMPORTANT PORTS
+------------------
+
+Prometheus       = 9090
+Grafana          = 3000
+Node Exporter    = 9100
+Loki             = 3100
+
+Loki endpoints:
+http://MONITORING-IP:3100/metrics
+http://MONITORING-IP:3100/ready
+
+
+5. INSTALL PROMETHEUS ON MONITORING SERVER
+------------------------------------------
+
+Create the installation script:
+
+vi promo.sh
+
+Run:
+
+sh promo.sh
+
+Download Prometheus:
+
+wget https://github.com/prometheus/prometheus/releases/download/v2.43.0/prometheus-2.43.0.linux-amd64.tar.gz
+
+Extract:
+
+tar -xf prometheus-2.43.0.linux-amd64.tar.gz
+
+Move Prometheus binaries:
+
+sudo mv prometheus-2.43.0.linux-amd64/prometheus prometheus-2.43.0.linux-amd64/promtool /usr/local/bin/
+
+Create directories:
+
+sudo mkdir -p /etc/prometheus /var/lib/prometheus
+
+Move console libraries:
+
+sudo mv prometheus-2.43.0.linux-amd64/console_libraries /etc/prometheus/
+
+Move console templates:
+
+sudo mv prometheus-2.43.0.linux-amd64/consoles /etc/prometheus/
+
+Remove extracted files:
+
+sudo rm -rf prometheus-2.43.0.linux-amd64*
+
+
+6. CONFIGURE PROMETHEUS
+-----------------------
+
+Create the configuration file:
+
+sudo vi /etc/prometheus/prometheus.yml
+
+Configuration:
+
+global:
+  scrape_interval: 10s
+
+scrape_configs:
+
+  - job_name: 'prometheus_metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'node_exporter_metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets:
+          - 'localhost:9100'
+          - 'worker-1:9100'
+          - 'worker-2:9100'
+
+
+7. CREATE PROMETHEUS USER
+-------------------------
+
+sudo useradd -rs /bin/false prometheus
+
+Change directory ownership:
+
+sudo chown -R prometheus:prometheus /etc/prometheus /var/lib/prometheus
+
+
+8. CREATE PROMETHEUS SYSTEMD SERVICE
+-------------------------------------
+
+Create the service file:
+
+sudo vi /etc/systemd/system/prometheus.service
+
+Configuration:
+
+[Unit]
+Description=Prometheus
+After=network.target
+
+[Service]
+User=prometheus
+Group=prometheus
+Type=simple
+ExecStart=/usr/local/bin/prometheus 
+  --config.file=/etc/prometheus/prometheus.yml 
+  --storage.tsdb.path=/var/lib/prometheus/ 
+  --web.console.templates=/etc/prometheus/consoles 
+  --web.console.libraries=/etc/prometheus/console_libraries
+
+[Install]
+WantedBy=multi-user.target
+
+
+Reload systemd:
+
+sudo systemctl daemon-reload
+
+Enable Prometheus:
+
+sudo systemctl enable prometheus
+
+Start Prometheus:
+
+sudo systemctl start prometheus
+
+Check status:
+
+sudo systemctl status prometheus --no-pager
+
+
+9. INSTALL GRAFANA
+------------------
+
+Download Grafana GPG key:
+
+wget -q -O gpg.key https://rpm.grafana.com/gpg.key
+
+Import the key:
+
+sudo rpm --import gpg.key
+
+Create Grafana repository:
+
+sudo vi /etc/yum.repos.d/grafana.repo
+
+Configuration:
+
+[grafana]
+name=grafana
+baseurl=https://rpm.grafana.com
+repo_gpgcheck=1
+enabled=1
+gpgcheck=1
+gpgkey=https://rpm.grafana.com/gpg.key
+sslverify=1
+sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+
+Install Grafana:
+
+sudo yum install grafana -y
+
+Start Grafana:
+
+sudo systemctl start grafana-server.service
+
+Enable Grafana:
+
+sudo systemctl enable grafana-server.service
+
+Check status:
+
+sudo systemctl status grafana-server.service
+
+
+10. INSTALL NODE EXPORTER ON MONITORING SERVER
+-----------------------------------------------
+
+Download Node Exporter:
+
+wget https://github.com/prometheus/node_exporter/releases/download/v1.5.0/node_exporter-1.5.0.linux-amd64.tar.gz
+
+Extract:
+
+tar -xf node_exporter-1.5.0.linux-amd64.tar.gz
+
+Move binary:
+
+sudo mv node_exporter-1.5.0.linux-amd64/node_exporter /usr/local/bin/
+
+Remove extracted files:
+
+rm -rf node_exporter-1.5.0.linux-amd64*
+
+Create user:
+
+sudo useradd -rs /bin/false node_exporter
+
+
+11. CREATE NODE EXPORTER SERVICE
+---------------------------------
+
+Create service:
+
+sudo vi /etc/systemd/system/node_exporter.service
+
+Configuration:
+
+[Unit]
+Description=Node Exporter
+After=network.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+Type=simple
+ExecStart=/usr/local/bin/node_exporter
+
+[Install]
+WantedBy=multi-user.target
+
+
+Reload systemd:
+
+sudo systemctl daemon-reload
+
+Enable Node Exporter:
+
+sudo systemctl enable node_exporter
+
+Start Node Exporter:
+
+sudo systemctl start node_exporter.service
+
+Check status:
+
+sudo systemctl status node_exporter.service --no-pager
+
+
+12. VERIFY MONITORING SERVER
+-----------------------------
+
+Open the following URLs:
+
+Node Exporter:
+
+http://MONITORING-SERVER-IP:9100
+
+Prometheus:
+
+http://MONITORING-SERVER-IP:9090
+
+Grafana:
+
+http://MONITORING-SERVER-IP:3000
+
+Default Grafana login:
+
+Username: admin
+Password: admin
+
+Change the default password after the first login.
+
+
+13. CONNECT PROMETHEUS TO GRAFANA
+----------------------------------
+
+Open Grafana.
+
+Navigate to:
+
+Connections → Data Sources → Add Data Source.
+
+Select Prometheus.
+
+Enter the Prometheus server URL:
+
+http://localhost:9090
+
+Save and test the connection.
+
+Note:
+If Grafana and Prometheus are running on the same server, localhost:9090 can be used.
+
+
+14. IMPORT GRAFANA DASHBOARD
+-----------------------------
+
+Navigate to:
+
+Dashboards → New → Import.
+
+Enter Dashboard ID:
+
+1860
+
+Click Load.
+
+Select Prometheus as the data source.
+
+Click Import.
+
+This dashboard is commonly known as Node Exporter Full.
+
+It helps monitor:
+- CPU utilization
+- Memory usage
+- Disk utilization
+- Network traffic
+- System performance
+
+
+15. ADD WORKER NODES
+---------------------
+
+Now we need to install Node Exporter on both worker nodes.
+
+Connect to Worker Node 1 and Worker Node 2.
+
+Create a script:
+
+vi node.sh
+
+Installation commands:
+
+wget https://github.com/prometheus/node_exporter/releases/download/v1.5.0/node_exporter-1.5.0.linux-amd64.tar.gz
+
+tar -xf node_exporter-1.5.0.linux-amd64.tar.gz
+
+sudo mv node_exporter-1.5.0.linux-amd64/node_exporter /usr/local/bin/
+
+rm -rf node_exporter-1.5.0.linux-amd64*
+
+sudo useradd -rs /bin/false node_exporter
+
+Create service:
+
+sudo vi /etc/systemd/system/node_exporter.service
+
+Configuration:
+
+[Unit]
+Description=Node Exporter
+After=network.target
+
+[Service]
+User=node_exporter
+Group=node_exporter
+Type=simple
+ExecStart=/usr/local/bin/node_exporter
+
+[Install]
+WantedBy=multi-user.target
+
+Reload systemd:
+
+sudo systemctl daemon-reload
+
+Enable service:
+
+sudo systemctl enable node_exporter
+
+Start service:
+
+sudo systemctl start node_exporter.service
+
+Check status:
+
+sudo systemctl status node_exporter.service --no-pager
+
+Perform these steps on both worker nodes.
+
+
+16. CONFIGURE WORKER NODE IP ADDRESSES
+---------------------------------------
+
+Initially, when we open Prometheus Targets, worker nodes may show DOWN.
+
+This happens if Prometheus cannot resolve the worker hostnames or connect to Node Exporter.
+
+On the monitoring server, edit:
+
+sudo vi /etc/hosts
+
+Add worker node private IP addresses:
+
+13.127.130.98 worker-1
+3.6.41.159 worker-2
+
+IMPORTANT:
+Replace these example IP addresses with your actual worker node private IP addresses.
+
+Check the configuration:
+
+cat /etc/prometheus/prometheus.yml
+
+Make sure worker-1 and worker-2 are configured as scrape targets.
+
+
+17. RELOAD PROMETHEUS
+----------------------
+
+Restart Prometheus:
+
+sudo systemctl restart prometheus
+
+Check status:
+
+sudo systemctl status prometheus
+
+Open:
+
+http://MONITORING-SERVER-IP:9090/targets
+
+Navigate to:
+
+Status → Targets.
+
+You should see:
+
+- prometheus_metrics
+- node_exporter_metrics
+
+The worker nodes should show UP when connectivity and configuration are correct.
+
+
+18. MONITOR WORKER NODES THROUGH GRAFANA
+-----------------------------------------
+
+Open Grafana:
+
+http://MONITORING-SERVER-IP:3000
+
+Login:
+
+Username: admin
+
+Password: Your configured password.
+
+Open the imported Node Exporter Full dashboard.
+
+Select the Host dropdown.
+
+You should be able to select and monitor:
+
+- Monitoring Server
+- Worker Node 1
+- Worker Node 2
+
+
+19. LOG MONITORING USING LOKI AND PROMTAIL
+-------------------------------------------
+
+Objective:
+
+We will configure Loki and Promtail using Docker to collect and monitor server logs.
+
+Install Docker:
+
+sudo yum install -y docker
+
+Start Docker:
+
+sudo systemctl start docker
+
+Enable Docker:
+
+sudo systemctl enable docker
+
+Check Docker:
+
+sudo systemctl status docker
+
+
+20. CREATE CONFIGURATION DIRECTORY
+-----------------------------------
+
+Create directory:
+
+mkdir -p grafana_configs
+
+Navigate:
+
+cd grafana_configs
+
+
+21. DOWNLOAD LOKI CONFIGURATION
+--------------------------------
+
+Download Loki configuration:
+
+sudo wget https://raw.githubusercontent.com/grafana/loki/v2.8.0/cmd/loki/loki-local-config.yaml -O loki-config.yaml
+
+
+22. DOWNLOAD PROMTAIL CONFIGURATION
+------------------------------------
+
+Download Promtail configuration:
+
+sudo wget https://raw.githubusercontent.com/grafana/loki/v2.8.0/clients/cmd/promtail/promtail-docker-config.yaml -O promtail-config.yaml
+
+
+23. RUN LOKI USING DOCKER
+--------------------------
+
+Run Loki:
+
+sudo docker run -d 
+  --name loki 
+  -v $(pwd):/mnt/config 
+  -p 3100:3100 
+  grafana/loki:2.8.0 
+  --config.file=/mnt/config/loki-config.yaml
+
+Check running containers:
+
+sudo docker ps
+
+Check Loki readiness:
+
+http://MONITORING-SERVER-IP:3100/ready
+
+Check Loki metrics:
+
+http://MONITORING-SERVER-IP:3100/metrics
+
+
+24. RUN PROMTAIL USING DOCKER
+------------------------------
+
+Run Promtail:
+
+sudo docker run -d 
+  --name promtail 
+  -v $(pwd):/mnt/config 
+  -v /var/log:/var/log 
+  --link loki 
+  grafana/promtail:2.8.0 
+  --config.file=/mnt/config/promtail-config.yaml
+
+Check containers:
+
+sudo docker ps
+
+IMPORTANT:
+Make sure the Promtail configuration has the correct Loki push URL and log file paths.
+
+
+25. CONNECT LOKI TO GRAFANA
+----------------------------
+
+Open Grafana.
+
+Navigate to:
+
+Connections → Data Sources → Add Data Source.
+
+Select Loki.
+
+Enter URL:
+
+http://localhost:3100
+
+Click Save & Test.
+
+If Loki runs in a separate container or server, use the correct reachable URL instead of localhost.
+
+
+26. EXPLORE AND FILTER LOGS
+----------------------------
+
+Open Grafana.
+
+Navigate to:
+
+Explore → Select Loki Data Source.
+
+Select the appropriate job label.
+
+Example LogQL query:
+
+{job="varlogs"}
+
+Click Run Query.
+
+You can now explore the logs collected by Promtail.
+
+
+27. COLLECT GRAFANA LOGS USING PROMTAIL
+----------------------------------------
+
+Open Promtail configuration:
+
+vi promtail-config.yaml
+
+Add a scrape configuration for Grafana logs:
+
+scrape_configs:
+  - job_name: grafanalogs
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: grafanalogs
+          __path__: /var/log/grafana/*.log
+
+IMPORTANT:
+If your existing configuration already contains scrape_configs, add this job under the existing section instead of creating a duplicate.
+
+Restart Promtail:
+
+sudo docker restart promtail
+
+Check:
+
+sudo docker ps
+
+Verify logs through Grafana Explore using Loki.
+
+
+28. CONFIGURE GRAFANA EMAIL ALERTS
+-----------------------------------
+
+First, enable two-step verification in your Google account.
+
+Generate a Gmail App Password.
+
+Use the generated App Password for SMTP authentication.
+
+Open Grafana configuration:
+
+sudo vi /etc/grafana/grafana.ini
+
+Find the SMTP section and configure:
+
+[smtp]
+enabled = true
+host = smtp.gmail.com:587
+user = YOUR-GMAIL-ADDRESS
+password = YOUR-GMAIL-APP-PASSWORD
+cert_file =
+key_file =
+skip_verify = false
+from_address = YOUR-GMAIL-ADDRESS
+from_name = Grafana
+
+IMPORTANT:
+Do not share your Gmail password or App Password.
+Do not upload credentials to GitHub.
+Keep the real password out of configuration files committed to a repository.
+
+Restart Grafana:
+
+sudo systemctl restart grafana-server.service
+
+Check status:
+
+sudo systemctl status grafana-server.service
+
+
+29. CREATE GRAFANA CONTACT POINT
+---------------------------------
+
+Open Grafana.
+
+Navigate to:
+
+Alerting → Contact Points → New Contact Point.
+
+Enter contact point name.
+
+Select Email.
+
+Enter the recipient email address.
+
+Click Test.
+
+Verify whether you receive the test email.
+
+
+30. CREATE CPU UTILIZATION ALERT
+---------------------------------
+
+Navigate to:
+
+Alerting → Alert Rules → New Alert Rule.
+
+Configure the alert:
+
+Alert Name: High CPU Usage
+
+Metric:
+
+node_cpu_seconds_total
+
+Select the required instance.
+
+Create a query to calculate CPU utilization.
+
+For example, use this PromQL expression:
+
+100 * (1 - avg by (instance) (
+  rate(node_cpu_seconds_total{mode="idle"}[5m])
+))
+
+Condition:
+
+WHEN CPU usage is above 70%.
+
+Evaluation:
+
+Pending Period: 30 seconds.
+
+Folder: cpu
+
+Evaluation Group: cpu
+
+Configure the alert rule to send notifications to your email contact point.
+
+Note:
+The above expression calculates CPU utilization percentage. This is more appropriate than directly checking the raw node_cpu_seconds_total counter.
+
+
+31. GENERATE CPU LOAD FOR TESTING
+----------------------------------
+
+Install stress if available in your configured repositories:
+
+sudo yum install -y stress
+
+Run:
+
+stress --cpu 2 --timeout 120
+
+This generates CPU load for 120 seconds.
+
+Open Grafana and monitor CPU utilization.
+
+Verify whether the alert is triggered and the email notification is received.
+
+Note:
+If stress is unavailable in the configured Amazon Linux 2023 repositories, configure an appropriate supported package source or use an alternative load-testing utility.
+
+
+32. ADDITIONAL ACTIVITIES
+--------------------------
+
+Additional tasks to practice:
+
+1. Integrate Grafana with Slack.
+2. Configure email notifications using SMTP.
+3. Create CPU utilization alerts.
+4. Create memory utilization alerts.
+5. Create disk utilization alerts.
+6. Create manual Grafana dashboards.
+7. Monitor multiple EC2 instances.
+8. Explore Prometheus queries.
+9. Explore Loki LogQL queries.
+10. Troubleshoot DOWN monitoring targets.
+
+
+33. IMPORTANT TROUBLESHOOTING COMMANDS
+---------------------------------------
+
+Check Prometheus:
+
+sudo systemctl status prometheus
+
+Check Grafana:
+
+sudo systemctl status grafana-server
+
+Check Node Exporter:
+
+sudo systemctl status node_exporter
+
+Check Docker:
+
+sudo systemctl status docker
+
+Check running containers:
+
+sudo docker ps
+
+Check Prometheus logs:
+
+sudo journalctl -u prometheus -f
+
+Check Grafana logs:
+
+sudo journalctl -u grafana-server -f
+
+Check Node Exporter logs:
+
+sudo journalctl -u node_exporter -f
+
+Check listening ports:
+
+sudo ss -tulpn
+
+
+34. PROJECT OUTCOME
+--------------------
+
+Successfully implemented centralized monitoring for multiple AWS EC2 instances using Prometheus and Grafana.
+
+Integrated Loki and Promtail for centralized log monitoring.
+
+Configured Grafana dashboards and email alerts to monitor infrastructure performance.
+
+This hands-on project provided practical experience with:
+
+- AWS EC2
+- Amazon Linux 2023
+- Prometheus
+- Grafana
+- Node Exporter
+- Loki
+- Promtail
+- Docker
+- Metrics Monitoring
+- Centralized Logging
+- Alert Management
+
+END OF PROJECT
+========================================================
